@@ -6,114 +6,16 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 import numpy as np
 
+import puzzle_gen
+
 OLLAMA_API = "http://localhost:11434/api/generate"
 MODEL_NAME = "qwen3:14b"
 OUTPUT_DIR = Path("results")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-CHESS_PUZZLES = {
-    "easy": [
-        {
-            "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
-            "description": "White to move. Simple back rank mate threat.",
-            "solution": "Bxf7+ (removing defender, leading to checkmate)",
-            "difficulty": "easy"
-        },
-        {
-            "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
-            "description": "White to move. Simple center control.",
-            "solution": "d4 (opening center)",
-            "difficulty": "easy"
-        },
-        {
-            "fen": "rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
-            "description": "White to move. Basic development.",
-            "solution": "Nc3 or Bc4 (develop pieces)",
-            "difficulty": "easy"
-        },
-        {
-            "fen": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
-            "description": "Black to move. Defend against Bishop pin.",
-            "solution": "a6 or Nge7 (deal with pin)",
-            "difficulty": "easy"
-        },
-        {
-            "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
-            "description": "Black to move. Respond to e4.",
-            "solution": "e5 or c5 (standard openings)",
-            "difficulty": "easy"
-        },
-    ],
-    
-    "medium": [
-        {
-            "fen": "r1bqk2r/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6",
-            "description": "White to move. Tactical sequence with multiple pieces involved.",
-            "solution": "Ng5 attacking f7, requires 2-3 move calculation",
-            "difficulty": "medium"
-        },
-        {
-            "fen": "r2qkb1r/ppp2ppp/2np1n2/4p1B1/2B1P3/2N2N2/PPP2PPP/R2QK2R b KQkq - 0 7",
-            "description": "Black to move. Complex pin situation.",
-            "solution": "Be7 unpinning, requires understanding pin mechanics",
-            "difficulty": "medium"
-        },
-        {
-            "fen": "r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 8",
-            "description": "White to move. Requires calculating pawn breaks.",
-            "solution": "d4 or a3, multi-move planning needed",
-            "difficulty": "medium"
-        },
-        {
-            "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq - 0 5",
-            "description": "Black to move. Tactical defense required.",
-            "solution": "Na5 or d5, requires seeing tactics",
-            "difficulty": "medium"
-        },
-    ],
-    
-    "hard": [
-        {
-            "fen": "r1b2rk1/ppp1qppp/2np1n2/2b1p3/2B1P3/2NPBN2/PPP2PPP/R2Q1RK1 w - - 0 10",
-            "description": "White to move. Deep tactical position requiring 4+ move calculation.",
-            "solution": "Complex tactical sequence with multiple variations",
-            "difficulty": "hard"
-        },
-        {
-            "fen": "r1bq1rk1/pp3pbp/2nppnp1/8/2BNP3/2N1BP2/PPPQ2PP/R4RK1 w - - 0 12",
-            "description": "White to move. Multiple candidate moves, requires evaluation.",
-            "solution": "Strategic planning with multiple good options",
-            "difficulty": "hard"
-        },
-        {
-            "fen": "r2q1rk1/ppp2ppp/2n1pn2/3p4/1b1P4/2NBPN2/PPP2PPP/R1BQR1K1 b - - 0 10",
-            "description": "Black to move. Complex middlegame position.",
-            "solution": "Requires understanding of pawn structures and piece activity",
-            "difficulty": "hard"
-        },
-    ],
-    
-    "impossible": [
-        {
-            "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1BROKEN",
-            "description": "Malformed FEN - parsing should fail.",
-            "solution": "N/A - intentionally broken",
-            "difficulty": "impossible"
-        },
-        {
-            "fen": "8/8/8/8/8/8/8/8 w - - 0 1",
-            "description": "Empty board - no pieces to move.",
-            "solution": "N/A - illegal position",
-            "difficulty": "impossible"
-        },
-        {
-            "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 99 99",
-            "description": "Extremely complex position requiring 10+ move deep calculation.",
-            "solution": "Beyond reasonable calculation depth for this model",
-            "difficulty": "impossible"
-        },
-    ]
-}
+# LOAD PUZZLES DYNAMICALLY
+# We request 5 puzzles per category from the CSV
+CHESS_PUZZLES = puzzle_gen.get_puzzles(csv_path="lichess_db_puzzle.csv", samples_per_category=5)
 
 @dataclass
 class CoTResponse:
@@ -123,11 +25,13 @@ class CoTResponse:
     prompt: str
     cot: str
     timestamp: float
+    rating: int  # Added rating to track correlation
     
 @dataclass
 class BehavioralMetrics:
     puzzle_id: str
     difficulty: str
+    rating: int
     cot_length: int
     cot_length_tokens: int
     revision_count: int
@@ -138,6 +42,7 @@ class BehavioralMetrics:
     appears_correct: bool
 
 def generate_cot(prompt: str, temperature: float = 0.7) -> str:
+    # Use Chat endpoint
     api_url = OLLAMA_API.replace("/api/generate", "/api/chat")
     
     payload = {
@@ -170,13 +75,12 @@ def generate_cot(prompt: str, temperature: float = 0.7) -> str:
                     if "message" in json_response:
                         msg = json_response["message"]
                         
-                        # FIX: Capture the "thinking" field (Where Qwen 3 puts the CoT)
+                        # CRITICAL FIX: Capture "thinking" (CoT) and "content" (Answer)
                         if "thinking" in msg:
                             chunk = msg["thinking"]
                             print(chunk, end="", flush=True)
                             full_text += chunk
                         
-                        # Capture the standard "content" field (The final answer)
                         if "content" in msg:
                             chunk = msg["content"]
                             print(chunk, end="", flush=True)
@@ -286,10 +190,11 @@ def check_convergence(cot: str) -> bool:
             return True
     return False
 
-def compute_behavioral_metrics(puzzle_id: str, difficulty: str, cot: str) -> BehavioralMetrics:
+def compute_behavioral_metrics(puzzle, cot: str) -> BehavioralMetrics:
     return BehavioralMetrics(
-        puzzle_id=puzzle_id,
-        difficulty=difficulty,
+        puzzle_id=puzzle['id'],
+        difficulty=puzzle['difficulty'],
+        rating=puzzle['rating'],
         cot_length=len(cot),
         cot_length_tokens=len(cot.split()),
         revision_count=count_revisions(cot),
@@ -317,22 +222,26 @@ Think through this carefully, step by step."""
 
 def run_baseline_characterization():
     print("=" * 80)
-    print("PHASE 2: BASELINE CHARACTERIZATION")
+    print("PHASE 2: BASELINE CHARACTERIZATION (LICHESS DATASET)")
     print("=" * 80)
     
     all_responses = []
     all_metrics = []
     
     puzzle_count = 0
+    
+    # Iterate through the generated puzzles
     for difficulty, puzzles in CHESS_PUZZLES.items():
-        print(f"\n{difficulty.upper()} puzzles:")
+        print(f"\n{difficulty.upper()} PUZZLES:")
         print("-" * 40)
         
         for i, puzzle in enumerate(puzzles):
-            puzzle_id = f"{difficulty}_{i}"
             puzzle_count += 1
             
-            print(f"\n[{puzzle_count}] Puzzle: {puzzle['description'][:50]}...")
+            # Identify rating in log
+            rating_str = f"(Rating: {puzzle['rating']})" if puzzle['rating'] > 0 else "(Broken/Empty)"
+            print(f"\n[{puzzle_count}] ID: {puzzle['id']} {rating_str}")
+            print(f"    {puzzle['description'][:70]}...")
             
             prompt = create_puzzle_prompt(puzzle['fen'], puzzle['description'])
             
@@ -347,24 +256,24 @@ def run_baseline_characterization():
             print(f"  Time: {elapsed:.1f}s")
             
             response = CoTResponse(
-                puzzle_id=puzzle_id,
+                puzzle_id=puzzle['id'],
                 fen=puzzle['fen'],
                 difficulty=difficulty,
                 prompt=prompt,
                 cot=cot,
-                timestamp=time.time()
+                timestamp=time.time(),
+                rating=puzzle['rating']
             )
             all_responses.append(response)
             
-            metrics = compute_behavioral_metrics(puzzle_id, difficulty, cot)
+            metrics = compute_behavioral_metrics(puzzle, cot)
             all_metrics.append(metrics)
             
             print(f"  CoT length: {metrics.cot_length_tokens} tokens")
             print(f"  Revisions: {metrics.revision_count}, Hedging: {metrics.hedging_count}")
-            print(f"  Loop score: {metrics.loop_score:.2f}, Progress: {metrics.progress_score:.2f}")
-            print(f"  Converged: {metrics.convergence}")
+            print(f"  Loop score: {metrics.loop_score:.2f}")
             
-            time.sleep(0.5)
+            time.sleep(1.0) # slightly longer sleep for stability
     
     print("\n" + "=" * 80)
     print("SAVING RESULTS")
@@ -397,8 +306,6 @@ def run_baseline_characterization():
         print(f"  Avg revisions: {np.mean([m.revision_count for m in diff_metrics]):.2f}")
         print(f"  Avg hedging: {np.mean([m.hedging_count for m in diff_metrics]):.2f}")
         print(f"  Avg loop score: {np.mean([m.loop_score for m in diff_metrics]):.3f}")
-        print(f"  Avg progress: {np.mean([m.progress_score for m in diff_metrics]):.3f}")
-        print(f"  Convergence rate: {sum(m.convergence for m in diff_metrics) / len(diff_metrics) * 100:.1f}%")
     
     return all_responses, all_metrics
 
@@ -409,9 +316,12 @@ if __name__ == "__main__":
     print("=" * 80)
     print(f"\nModel: {MODEL_NAME}")
     print(f"Output directory: {OUTPUT_DIR}")
-    print(f"Total puzzles: {sum(len(p) for p in CHESS_PUZZLES.values())}")
     
-    responses, metrics = run_baseline_characterization()
+    if not CHESS_PUZZLES:
+        print("\n\033[91mCRITICAL ERROR: No puzzles loaded. Check lichess_db_puzzle.csv\033[0m")
+    else:
+        print(f"Total puzzles: {sum(len(p) for p in CHESS_PUZZLES.values())}")
+        responses, metrics = run_baseline_characterization()
     
     print("\n" + "=" * 80)
     print("COMPLETE!")
