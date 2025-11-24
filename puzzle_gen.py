@@ -15,7 +15,6 @@ def get_puzzles(csv_path="lichess_db_puzzle.csv", samples_per_category=5):
         "impossible": (2600, 3500) # Grandmaster / Engine lines
     }
 
-
     candidates = {k: [] for k in categories}
 
     print(f"Loading puzzles from {csv_path}...")
