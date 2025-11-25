@@ -22,7 +22,6 @@ def get_ollama_cot(prompt):
         return ""
 
 def run_neuro_scan(prompt, cot_text, model):
-    # Combine and tokenize
     full_text = prompt + "\n" + cot_text
     input_ids = model.to_tokens(full_text)
     

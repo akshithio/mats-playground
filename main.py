@@ -14,7 +14,6 @@ OUTPUT_DIR = Path("results")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # LOAD PUZZLES DYNAMICALLY
-# We request 5 puzzles per category from the CSV
 CHESS_PUZZLES = puzzle_gen.get_puzzles(csv_path="lichess_db_puzzle.csv", samples_per_category=5)
 
 @dataclass
@@ -25,7 +24,7 @@ class CoTResponse:
     prompt: str
     cot: str
     timestamp: float
-    rating: int  # Added rating to track correlation
+    rating: int
     
 @dataclass
 class BehavioralMetrics:
@@ -48,14 +47,17 @@ def generate_cot(prompt: str, temperature: float = 0.7) -> str:
     payload = {
         "model": MODEL_NAME,
         "messages": [
+            # Stateless: New conversation for every request
             {"role": "user", "content": prompt}
         ],
         "temperature": temperature,
         "stream": True,
         "options": {
-            "num_predict": 4000,
+            "num_predict": -1, # Infinite generation limit
         }
     }
+    
+    current_mode = None
     
     try:
         response = requests.post(api_url, json=payload, stream=True, timeout=None)
@@ -75,13 +77,22 @@ def generate_cot(prompt: str, temperature: float = 0.7) -> str:
                     if "message" in json_response:
                         msg = json_response["message"]
                         
-                        # CRITICAL FIX: Capture "thinking" (CoT) and "content" (Answer)
-                        if "thinking" in msg:
+                        # Handle Thinking (CoT)
+                        if "thinking" in msg and msg["thinking"]:
+                            if current_mode != "thinking":
+                                print(f"\n\n\033[94m=== CHAIN OF THOUGHT ===\033[0m\n", flush=True)
+                                current_mode = "thinking"
+                            
                             chunk = msg["thinking"]
                             print(chunk, end="", flush=True)
                             full_text += chunk
                         
-                        if "content" in msg:
+                        # Handle Content (Answer)
+                        if "content" in msg and msg["content"]:
+                            if current_mode != "content":
+                                print(f"\n\n\033[92m=== FINAL ANSWER ===\033[0m\n", flush=True)
+                                current_mode = "content"
+                                
                             chunk = msg["content"]
                             print(chunk, end="", flush=True)
                             full_text += chunk
@@ -91,7 +102,8 @@ def generate_cot(prompt: str, temperature: float = 0.7) -> str:
                         
                 except json.JSONDecodeError:
                     continue
-                    
+        
+        print("\n")
         return full_text
 
     except Exception as e:
@@ -205,12 +217,13 @@ def compute_behavioral_metrics(puzzle, cot: str) -> BehavioralMetrics:
         appears_correct=False,
     )
 
-def create_puzzle_prompt(fen: str, description: str) -> str:
+# UPDATED: Removes description/themes from the actual prompt
+def create_puzzle_prompt(fen: str) -> str:
     return f"""You are analyzing a chess position. Think step by step.
 
 FEN notation: {fen}
 
-Task: {description}
+Task: Find the best move.
 
 Please:
 1. Parse and understand the position from the FEN notation
@@ -230,7 +243,6 @@ def run_baseline_characterization():
     
     puzzle_count = 0
     
-    # Iterate through the generated puzzles
     for difficulty, puzzles in CHESS_PUZZLES.items():
         print(f"\n{difficulty.upper()} PUZZLES:")
         print("-" * 40)
@@ -238,21 +250,27 @@ def run_baseline_characterization():
         for i, puzzle in enumerate(puzzles):
             puzzle_count += 1
             
-            # Identify rating in log
+            # We still print the description for the user to see in logs,
+            # but we do NOT pass it to the prompt generator.
             rating_str = f"(Rating: {puzzle['rating']})" if puzzle['rating'] > 0 else "(Broken/Empty)"
             print(f"\n[{puzzle_count}] ID: {puzzle['id']} {rating_str}")
-            print(f"    {puzzle['description'][:70]}...")
+            print(f"    (Hidden from model) Theme: {puzzle['description'][:70]}...")
             
-            prompt = create_puzzle_prompt(puzzle['fen'], puzzle['description'])
+            # NO DESCRIPTION PASSED HERE
+            prompt = create_puzzle_prompt(puzzle['fen'])
             
-            print("  Generating CoT...\n")
+            print("\n" + "="*20 + " PROMPT " + "="*20)
+            print(prompt)
+            print("="*48 + "\n")
+            
+            print("  Generating CoT...")
             print("-" * 20 + " STREAM START " + "-" * 20)
             
             start_time = time.time()
             cot = generate_cot(prompt)
             elapsed = time.time() - start_time
             
-            print("\n" + "-" * 20 + " STREAM END " + "-" * 20)
+            print("-" * 20 + " STREAM END " + "-" * 20)
             print(f"  Time: {elapsed:.1f}s")
             
             response = CoTResponse(
@@ -273,7 +291,7 @@ def run_baseline_characterization():
             print(f"  Revisions: {metrics.revision_count}, Hedging: {metrics.hedging_count}")
             print(f"  Loop score: {metrics.loop_score:.2f}")
             
-            time.sleep(1.0) # slightly longer sleep for stability
+            time.sleep(1.0) 
     
     print("\n" + "=" * 80)
     print("SAVING RESULTS")
